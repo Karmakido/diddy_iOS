@@ -9,7 +9,7 @@
 
 ### Weitere Änderungen
 
-- **Hoher Ping und hängendes Audio im Call (#144):** Die Statistikabfrage beim Bildschirmteilen läuft nicht mehr überlappend, hat ein Zeitlimit, beendet sich selbst und hält die Liste der Verbindungen klein. Beste Annahme für die Ursache, nicht in einem echten Call bestätigt.
+- **Hoher Ping und hängendes Audio im Call (#144):** Die Statistikabfrage beim Bildschirmteilen läuft nicht mehr überlappend, hat ein Zeitlimit, beendet sich selbst und hält die Liste der Verbindungen klein. Dazu bevorzugen Anrufe H264 (VideoToolbox) statt Software-VP8, und die Bildschirmübertragung ist auf 1080p30 begrenzt. Beste Annahme für die Ursache, nicht in einem echten Call bestätigt.
 - **iOS: Absturz nach dem Verlassen eines Anrufs (#116):** Beim Auflegen werden zuerst alle Videos aus der Oberfläche entfernt und ein noch laufender Verbindungsaufbau wird abgebrochen. Beste Annahme, nicht auf einem Gerät bestätigt.
 
 ## 1.4.0 (2026-11-08)
