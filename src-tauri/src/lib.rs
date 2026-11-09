@@ -10,6 +10,7 @@ mod app_icon;
 mod diag;
 mod connections;
 mod myinstants;
+mod window_guard;
 #[cfg(target_os = "macos")]
 mod audio_tap;
 #[cfg(target_os = "macos")]
@@ -73,6 +74,26 @@ fn media_enabled_webview_configuration(profile: Option<[u8; 16]>) -> Result<objc
     }
 }
 
+/// A position restored from an old session can lie outside every connected monitor; the window
+/// then looks like it vanished. Move it back to the primary monitor in that case.
+fn keep_window_on_screen(window: &tauri::WebviewWindow) {
+    let (Ok(pos), Ok(size), Ok(monitors)) = (window.outer_position(), window.outer_size(), window.available_monitors()) else { return };
+    let mut rects: Vec<window_guard::Rect> = monitors.iter()
+        .map(|m| window_guard::Rect { x: m.position().x, y: m.position().y, w: m.size().width, h: m.size().height })
+        .collect();
+    // The primary monitor is the fallback target.
+    if let Ok(Some(primary)) = window.primary_monitor() {
+        let first = window_guard::Rect { x: primary.position().x, y: primary.position().y, w: primary.size().width, h: primary.size().height };
+        rects.retain(|r| *r != first);
+        rects.insert(0, first);
+    }
+    let current = window_guard::Rect { x: pos.x, y: pos.y, w: size.width, h: size.height };
+    if let Some((x, y)) = window_guard::fix_position(current, &rects) {
+        diag::diag_log(format!("window: restored position {},{} is off screen, moving to {x},{y}", pos.x, pos.y));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+}
+
 pub(crate) fn build_client_window(
     app: &tauri::AppHandle,
     label: &str,
@@ -131,6 +152,7 @@ pub(crate) fn build_client_window(
             profile.map(|p| connections::profile_identifier(&p.id)).transpose()?
         )?);
     let window = window_builder.build().map_err(|_| "Verbindungsfenster konnte nicht geöffnet werden.".to_string())?;
+    keep_window_on_screen(&window);
     #[cfg(target_os = "linux")]
     enable_linux_media(&window);
     #[cfg(not(target_os = "linux"))]
@@ -245,7 +267,15 @@ pub fn run() {
         .manage(connections::ConnectionState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_localhost::Builder::new(APP_PORT).build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_window_state::Builder::default()
+            // Never restore visibility or decorations: a stored "hidden" state makes the window vanish.
+            .with_state_flags(
+                tauri_plugin_window_state::StateFlags::SIZE
+                    | tauri_plugin_window_state::StateFlags::POSITION
+                    | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                    | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+            )
+            .build())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             #[cfg(feature = "updater")]
