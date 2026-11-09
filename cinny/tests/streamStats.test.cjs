@@ -16,6 +16,9 @@ vm.runInNewContext(
   {
     exports: exported,
     WeakMap,
+    setTimeout,
+    clearTimeout,
+    Promise,
     window: {},
     require: (id) => {
       if (id !== '../diagnostics') throw new Error(`Unexpected dependency: ${id}`);
@@ -55,4 +58,20 @@ test('a smaller sent frame blames the reason the encoder itself reports', () => 
 test('missing numbers produce no verdict instead of a wrong one', () => {
   assert.equal(exported.resolutionDiagnosis({}, { width: 640, height: 360 }), null);
   assert.equal(exported.resolutionDiagnosis({ width: 1920, height: 1080 }, {}), null);
+});
+
+test('pruneConnections drops closed connections and caps the list, oldest first', () => {
+  const list = [
+    { id: 1, connectionState: 'closed' },
+    { id: 2, connectionState: 'connected' },
+    { id: 3, connectionState: 'connected' },
+    { id: 4, connectionState: 'connected' },
+  ];
+  exported.pruneConnections(list, 2);
+  assert.deepEqual(list.map((p) => p.id), [3, 4]);
+});
+
+test('withTimeout rejects a promise that never settles and passes through fast ones', async () => {
+  await assert.rejects(exported.withTimeout(new Promise(() => {}), 10), /timeout/);
+  assert.equal(await exported.withTimeout(Promise.resolve(7), 1000), 7);
 });
