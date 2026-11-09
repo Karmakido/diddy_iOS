@@ -140,8 +140,12 @@ final class CallSession: NSObject, ObservableObject {
             e2eeOptions: encrypted ? LiveKit.E2EEOptions(keyProvider: keyProvider) : nil
         )
         state = "Connecting…"
-        try configureAudioSession()
         try await liveKitRoom.connect(url: sfu.url, token: sfu.jwt, roomOptions: roomOptions)
+        // Left while still connecting: disconnect() already ran, so undo the late connect and stop.
+        if closed {
+            await liveKitRoom.disconnect()
+            throw CancellationError()
+        }
 
         if encrypted {
             keyProvider.setKey(keyData: ownKey, participantId: liveKitRoom.localParticipant.identity?.stringValue ?? ownIdentity, index: ownKeyIndex)
@@ -175,14 +179,14 @@ final class CallSession: NSObject, ObservableObject {
             // An empty content ends our membership for everyone else.
             _ = try? await matrixRoom.sendStateEventRaw(eventType: Self.memberEventType, stateKey: stateKey, content: "{}", requestConfigOverride: nil)
         }
-        // Stop local capture (camera, screen share, microphone) before the room goes away.
+        // Stop local capture (camera, screen share) before the room goes away.
         let local = liveKitRoom.localParticipant
         _ = try? await local.setScreenShare(enabled: false)
         _ = try? await local.setCamera(enabled: false)
-        _ = try? await local.setMicrophone(enabled: false)
         liveKitRoom.remove(delegate: self)
         await liveKitRoom.disconnect()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // The audio session is LiveKit's: it deactivates it itself once the audio engine has stopped.
+        // Deactivating it here raced with the running engine.
     }
 
     // MARK: Controls
@@ -233,11 +237,6 @@ final class CallSession: NSObject, ObservableObject {
                 (publication.track as? LiveKit.RemoteAudioTrack)?.volume = deafened ? 0 : 1
             }
         }
-    }
-
-    private func configureAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
     }
 
     // MARK: MatrixRTC
